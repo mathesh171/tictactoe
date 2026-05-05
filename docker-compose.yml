@@ -1,0 +1,30 @@
+version: "3"
+services:
+  web:
+    container_name: "morpion-web"
+    build: .
+    ports:
+      - "80:80"
+    depends_on:
+      - mysql
+    networks:
+      - morpion
+
+  mysql:
+    image: mariadb:11
+    networks:
+      - morpion
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=morpion
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - morpion
+
+networks:
+  morpion:

@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+	URL::forceScheme('https');
+        
+        // Création d'une directive blade spéciale, qui parse automatiquement avec Carbon
+        // et qui affiche la différence pour un humain.
+        // Ceci évite d'avoir trop de logique dans les vues.
+        Blade::directive('human_diff', function ($expression) {
+            return "<?php echo \Carbon\Carbon::parse($expression)->diffForHumans(); ?>";
+        });
+    }
+}
