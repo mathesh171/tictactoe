@@ -1,44 +1,112 @@
-FROM composer:2.7.7
+FROM php:8.3-fpm
 
-LABEL version=1.0.1
-LABEL app=Tic-Tac-Toe
+RUN apt update && apt install -y \
+    nginx \
+    git \
+    unzip \
+    curl \
+    libzip-dev \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    libicu-dev \
+    && docker-php-ext-install \
+    pdo \
+    pdo_mysql \
+    mbstring \
+    zip \
+    xml \
+    bcmath \
+    intl \
+    && apt clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create the HTML directory to serve the webapp
-RUN mkdir -p /var/www/html
-WORKDIR /var/www/html/
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Copy all the files from the Git repo to the Docker container
-COPY . .
+WORKDIR /var/www/html
 
-# Publish the php.ini config file
-RUN cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
+RUN rm -rf /var/www/html/* /var/www/html/.* 2>/dev/null || true \
+    && git clone https://github.com/mathesh171/tictactoe.git /tmp/tictactoe \
+    && cp -a /tmp/tictactoe/. /var/www/html \
+    && rm -rf /tmp/tictactoe
 
-# Install imagemagick (Needed for TFA QRCode)
-RUN apk add pcre-dev "$PHPSIZE_DEPS" imagemagick-dev && apk cache clean
+RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# RUN apk add imagemagick-dev 
+RUN mkdir -p storage/logs bootstrap/cache \
+    && touch storage/logs/laravel.log \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 storage bootstrap/cache
 
-# Enable the imagick extension
-RUN mkdir -p /usr/src/php/ext/imagick \
-	&& curl -fsSL https://pecl.php.net/get/imagick | tar xvz -C "/usr/src/php/ext/imagick" --strip 1
+RUN cat > /etc/nginx/sites-available/default <<'EOF'
+server {
+    listen 80;
+    server_name _;
 
-# Install & Enable PHP required extensions
-RUN docker-php-ext-install imagick pdo_mysql
+    root /var/www/html/public;
+    index index.php index.html;
 
-# Update & Install Laravel vendor
-RUN composer update && composer install
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
 
-# Install deps for the wait-for-mysql script
-RUN apk add mariadb-client && apk cache clean
-RUN mv wait-for-mysql.sh /
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
 
-# Ensure that the MySQL container is started and launch migration && serve the app
-RUN echo "/wait-for-mysql.sh" > /init.sh \
-	&& echo "php artisan serve --host 0.0.0.0 --port 80" >> /init.sh
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param DOCUMENT_ROOT $document_root;
+    }
 
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
 
-RUN chmod +x /wait-for-mysql.sh && chmod +x /init.sh
+RUN cat > /start.sh <<'EOF'
+#!/bin/bash
+set -e
 
+cat > /var/www/html/.env <<ENVEOF
+APP_NAME=${APP_NAME}
+APP_ENV=${APP_ENV}
+APP_KEY=
+APP_DEBUG=${APP_DEBUG}
+APP_URL=${APP_URL}
+ASSET_URL=${ASSET_URL}
 
-# Entrypoint
-CMD ["/init.sh"]
+LOG_CHANNEL=stack
+LOG_LEVEL=debug
+
+DB_CONNECTION=${DB_CONNECTION}
+DB_HOST=${DB_HOST}
+DB_PORT=${DB_PORT}
+DB_DATABASE=${DB_DATABASE}
+DB_USERNAME=${DB_USERNAME}
+DB_PASSWORD=${DB_PASSWORD}
+
+CACHE_DRIVER=file
+QUEUE_CONNECTION=sync
+SESSION_DRIVER=file
+SESSION_LIFETIME=120
+ENVEOF
+
+php artisan optimize:clear || true
+php artisan key:generate --force || true
+php artisan migrate --force || true
+
+php artisan config:cache || true
+php artisan route:cache || true
+php artisan view:cache || true
+
+php-fpm -D
+nginx -g "daemon off;"
+EOF
+
+RUN chmod +x /start.sh
+
+EXPOSE 80
+
+CMD ["/start.sh"]
