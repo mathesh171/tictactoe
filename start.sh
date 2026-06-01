@@ -1,7 +1,7 @@
 #!/bin/bash
+
 set -e
 
-# Write .env from ECS task definition environment variables
 cat > /var/www/html/.env <<ENVEOF
 APP_NAME=${APP_NAME:-GameTime}
 APP_ENV=${APP_ENV:-production}
@@ -26,17 +26,11 @@ SESSION_DRIVER=file
 SESSION_LIFETIME=120
 ENVEOF
 
-# Clear old caches
 php artisan optimize:clear || true
-
-# Cache config, routes, views
-php artisan config:cache || true
-php artisan route:cache  || true
-php artisan view:cache   || true
-
-# Run migrations
+php artisan config:cache    || true
+php artisan route:cache     || true
+php artisan view:cache      || true
 php artisan migrate --force || true
 
-# Start php-fpm in background, then nginx in foreground
 php-fpm -D
 nginx -g "daemon off;"
