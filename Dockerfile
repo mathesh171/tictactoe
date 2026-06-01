@@ -1,25 +1,12 @@
 FROM php:8.3-fpm
 
 RUN apt update && apt install -y \
-    nginx \
-    git \
-    unzip \
-    curl \
-    libzip-dev \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    libicu-dev \
+    nginx git unzip curl \
+    libzip-dev libpng-dev libonig-dev \
+    libxml2-dev libicu-dev \
     && docker-php-ext-install \
-    pdo \
-    pdo_mysql \
-    mbstring \
-    zip \
-    xml \
-    bcmath \
-    intl \
-    && apt clean \
-    && rm -rf /var/lib/apt/lists/*
+    pdo pdo_mysql mbstring zip xml bcmath intl \
+    && apt clean && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -37,76 +24,32 @@ RUN mkdir -p storage/logs bootstrap/cache \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
 
-RUN cat > /etc/nginx/sites-available/default <<'EOF'
+RUN cat > /etc/nginx/sites-available/default <<'NGINXEOF'
 server {
     listen 80;
     server_name _;
-
     root /var/www/html/public;
     index index.php index.html;
-
     access_log /var/log/nginx/access.log;
     error_log /var/log/nginx/error.log;
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
-
     location ~ \.php$ {
         include fastcgi_params;
         fastcgi_pass 127.0.0.1:9000;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_param DOCUMENT_ROOT $document_root;
     }
-
     location ~ /\.ht {
         deny all;
     }
 }
-EOF
+NGINXEOF
 
-RUN cat > /start.sh <<'EOF'
-#!/bin/bash
-set -e
-
-cat > /var/www/html/.env <<ENVEOF
-APP_NAME=${APP_NAME}
-APP_ENV=${APP_ENV}
-APP_KEY=
-APP_DEBUG=${APP_DEBUG}
-APP_URL=${APP_URL}
-ASSET_URL=${ASSET_URL}
-
-LOG_CHANNEL=stack
-LOG_LEVEL=debug
-
-DB_CONNECTION=${DB_CONNECTION}
-DB_HOST=${DB_HOST}
-DB_PORT=${DB_PORT}
-DB_DATABASE=${DB_DATABASE}
-DB_USERNAME=${DB_USERNAME}
-DB_PASSWORD=${DB_PASSWORD}
-
-CACHE_DRIVER=file
-QUEUE_CONNECTION=sync
-SESSION_DRIVER=file
-SESSION_LIFETIME=120
-ENVEOF
-
-php artisan optimize:clear || true
-php artisan key:generate --force || true
-php artisan migrate --force || true
-
-php artisan config:cache || true
-php artisan route:cache || true
-php artisan view:cache || true
-
-php-fpm -D
-nginx -g "daemon off;"
-EOF
-
+COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
 EXPOSE 80
-
 CMD ["/start.sh"]
